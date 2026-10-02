@@ -30,7 +30,7 @@
     <div class="card">
         <div id="loading" class="loading-screen">
             <div class="spinner"></div>
-            <div>กำลังเชื่อมต่อระบบ...</div>
+            <div id="loading-text">กำลังเชื่อมต่อระบบ...</div>
         </div>
         <div id="app-content" style="display: none;">
             <img id="user-img" class="avatar" src="https://via.placeholder.com/90" alt="Profile">
@@ -44,24 +44,63 @@
             <button id="btn-action" class="btn-checkin" onclick="doCheckin()">📍 กดเช็คอิน</button>
         </div>
     </div>
+
     <script>
         const MY_LIFF_ID = "2011831668-svA4ZJ08";
         const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwcNaoI4fnSKK4kqBrGPDKYf9oB0145Gn9c4DDbeS4VytLAvvZMyerPP1CXtHc_RuVfog/exec"; 
+        
         let currentUserId = "";
         let currentAction = "get";
 
+        window.handleResponse = function(data) {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('app-content').style.display = 'block';
+
+            const btn = document.getElementById('btn-action');
+            btn.disabled = false;
+            btn.innerText = "📍 กดเช็คอิน";
+
+            if (data && data.success) {
+                document.getElementById('checkin-count').innerText = data.checkinCount;
+                document.getElementById('cycle-count').innerText = data.cycleCount;
+
+                const percent = (data.checkinCount / 10) * 100;
+                document.getElementById('progress-fill').style.width = percent + "%";
+
+                if (currentAction === "checkin" && data.message) {
+                    alert(data.message);
+                }
+            } else {
+                alert("เกิดข้อผิดพลาด: " + (data ? data.message : "ไม่สามารถดึงข้อมูลได้"));
+            }
+        };
+
         async function initLiff() {
             try {
+                document.getElementById('loading-text').innerText = "กำลังตรวจสอบบัญชี LINE...";
                 await liff.init({ liffId: MY_LIFF_ID });
-                if (!liff.isLoggedIn()) { liff.login(); return; }
+                
+                if (!liff.isLoggedIn()) {
+                    liff.login();
+                    return;
+                }
+
                 const profile = await liff.getProfile();
                 currentUserId = profile.userId;
                 document.getElementById('user-name').innerText = profile.displayName;
-                if (profile.pictureUrl) document.getElementById('user-img').src = profile.pictureUrl;
+                if (profile.pictureUrl) {
+                    document.getElementById('user-img').src = profile.pictureUrl;
+                }
+
+                document.getElementById('loading-text').innerText = "กำลังดึงข้อมูลเช็คอิน...";
                 loadData("get");
+
             } catch (err) {
                 console.error("LIFF Error:", err);
-                document.getElementById('loading').innerHTML = "<div style='color:#ef4444;'>เกิดข้อผิดพลาดในการดึงข้อมูล LIFF</div>";
+                document.getElementById('loading').innerHTML = `<div style="color:#ef4444; padding:10px;">
+                    <b>เกิดข้อผิดพลาด</b><br>
+                    <small>${err.message || 'ไม่สามารถโหลด LIFF ได้'}</small>
+                </div>`;
             }
         }
 
@@ -70,32 +109,27 @@
             const btn = document.getElementById('btn-action');
             btn.disabled = true;
             btn.innerText = action === "checkin" ? "⏳ กำลังบันทึก..." : "⏳ กำลังโหลด...";
+
             const oldScript = document.getElementById('jsonp-script');
             if (oldScript) oldScript.remove();
+
             const script = document.createElement('script');
             script.id = 'jsonp-script';
             script.src = `${GOOGLE_SCRIPT_URL}?userId=${currentUserId}&action=${action}&callback=handleResponse`;
+            
+            script.onerror = function() {
+                alert("เกิดข้อผิดพลาดในการเชื่อมต่อกับ Google Apps Script");
+                btn.disabled = false;
+                btn.innerText = "📍 กดเช็คอิน";
+            };
+
             document.body.appendChild(script);
         }
 
-        function handleResponse(data) {
-            document.getElementById('loading').style.display = 'none';
-            document.getElementById('app-content').style.display = 'block';
-            const btn = document.getElementById('btn-action');
-            btn.disabled = false;
-            btn.innerText = "📍 กดเช็คอิน";
-            if (data.success) {
-                document.getElementById('checkin-count').innerText = data.checkinCount;
-                document.getElementById('cycle-count').innerText = data.cycleCount;
-                const percent = (data.checkinCount / 10) * 100;
-                document.getElementById('progress-fill').style.width = percent + "%";
-                if (currentAction === "checkin" && data.message) alert(data.message);
-            } else {
-                alert("เกิดข้อผิดพลาด: " + (data.message || "ไม่สามารถดึงข้อมูลได้"));
-            }
+        function doCheckin() {
+            loadData("checkin");
         }
 
-        function doCheckin() { loadData("checkin"); }
         initLiff();
     </script>
 </body>
